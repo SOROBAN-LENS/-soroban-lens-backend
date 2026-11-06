@@ -1,0 +1,15 @@
+[package]
+name = "soroban-lens-error-analyzer"
+description = "Rule-based mapping from Stellar/Soroban failure signals to explained diagnostic issues."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+soroban-lens-models.workspace = true
+
+[lints]
+workspace = true

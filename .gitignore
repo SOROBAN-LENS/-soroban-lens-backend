@@ -1,0 +1,14 @@
+# Rust build output
+/target/
+**/*.rs.bk
+
+# Environment files (never commit real configuration or secrets)
+.env
+.env.*
+!.env.example
+
+# Editors / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store

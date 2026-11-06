@@ -1,0 +1,31 @@
+name: Incorrect or missing diagnosis
+description: SorobanLens explained a transaction wrongly, or could not explain it.
+labels: ["diagnostics"]
+body:
+  - type: input
+    id: hash
+    attributes:
+      label: Transaction hash
+    validations:
+      required: true
+  - type: dropdown
+    id: network
+    attributes:
+      label: Network
+      options: [testnet, mainnet, futurenet]
+    validations:
+      required: true
+  - type: textarea
+    id: report
+    attributes:
+      label: What SorobanLens reported
+      description: Paste the relevant part of the report (rule_id, category, summary).
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What actually caused the failure
+      description: How do you know? (contract source, simulation output, CLI output…)
+    validations:
+      required: true
