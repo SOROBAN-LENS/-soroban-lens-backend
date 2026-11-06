@@ -92,6 +92,17 @@ curl localhost:8080/health
 curl localhost:8080/api/v1
 ```
 
+### Persistent storage (PostgreSQL)
+
+Without `DATABASE_URL`, reports are kept in memory and lost on restart. To keep
+them, point the server at PostgreSQL; migrations run automatically at startup:
+
+```sh
+docker run -d --name soroban-lens-pg -p 5432:5432 \
+  -e POSTGRES_USER=soroban_lens -e POSTGRES_PASSWORD=soroban_lens postgres:17-alpine
+DATABASE_URL=postgres://soroban_lens:soroban_lens@localhost:5432/soroban_lens cargo run -p soroban-lens-api
+```
+
 Analyze a transaction without running the server:
 
 ```sh
@@ -102,6 +113,8 @@ cargo run -p soroban-lens-diagnostic-engine --example analyze -- <tx-hash> [rpc-
 
 ```sh
 cargo test --workspace          # all tests (no network access needed)
+# also run the PostgreSQL store tests (they are skipped without this variable):
+TEST_DATABASE_URL=postgres://soroban_lens:soroban_lens@localhost:5432/soroban_lens cargo test --workspace
 cargo clippy --workspace --all-targets
 cargo fmt --all --check
 ```
@@ -109,7 +122,9 @@ cargo fmt --all --check
 The suite includes tests against **real testnet transactions** replayed through
 a mock RPC server (`crates/diagnostic-engine/tests/real_fixtures.rs`), synthetic
 XDR tests for other failure codes, RPC client failure modes (timeouts, HTTP
-errors, malformed and oversized responses), and HTTP-level API tests.
+errors, malformed and oversized responses), HTTP-level API tests, and a shared
+store test suite run against both the in-memory and PostgreSQL stores
+(`api/tests/store.rs`). CI runs it against a PostgreSQL service container.
 
 ## Configuration
 
@@ -127,7 +142,9 @@ All settings are environment variables; see [`.env.example`](.env.example).
 | `SOROBAN_LENS_MAX_BODY_BYTES` | `16384` | Request body limit |
 | `SOROBAN_LENS_REQUEST_TIMEOUT_SECS` | `30` | Whole-request timeout |
 | `SOROBAN_LENS_RATE_LIMIT_PER_MINUTE` | `30` | Analyze requests per IP; `0` disables |
-| `SOROBAN_LENS_STORE_CAPACITY` | `1000` | In-memory reports kept |
+| `DATABASE_URL` | *(unset)* | PostgreSQL URL; unset uses the in-memory store |
+| `DATABASE_MAX_CONNECTIONS` | `10` | PostgreSQL pool size |
+| `SOROBAN_LENS_STORE_CAPACITY` | `1000` | In-memory reports kept (in-memory store only) |
 | `SOROBAN_LENS_LOG_FORMAT` | `pretty` | `pretty` or `json` |
 | `RUST_LOG` | `info,…` | Log filter |
 
@@ -158,7 +175,9 @@ Invalid configuration stops the server at startup with a clear message.
 
 ### Not yet implemented / known limitations
 
-* **Persistence is in-memory**: reports are lost on restart; PostgreSQL is planned.
+* **Persistence**: PostgreSQL storage works but has no retention policy yet
+  (rows grow without bound) and no lookup by transaction hash or
+  report-history endpoint. Without `DATABASE_URL`, storage is in-memory.
 * **No simulation**: failures without diagnostic events cannot be re-simulated
   to find the host error.
 * **Contract error names**: `Error(Contract, #n)` is reported by number; names
@@ -172,7 +191,7 @@ Invalid configuration stops the server at startup with a clear message.
 
 ### Planned next steps
 
-PostgreSQL store · `simulateTransaction` re-simulation · contract spec lookup
+`simulateTransaction` re-simulation · contract spec lookup
 for error names · fixtures from `soroban-lens-contracts` · OpenAPI document ·
 Dockerfile · trusted-proxy rate limiting · `getHealth`-based readiness endpoint.
 

@@ -3,7 +3,8 @@ use std::sync::Arc;
 
 use chrono::Utc;
 use soroban_lens_api::config::{Config, LogFormat};
-use soroban_lens_api::store::InMemoryStore;
+use soroban_lens_api::store::postgres::{PostgresOptions, PostgresStore};
+use soroban_lens_api::store::{AnalysisStore, InMemoryStore};
 use soroban_lens_api::{AppState, build_router};
 use soroban_lens_diagnostic_engine::DiagnosticEngine;
 use soroban_lens_stellar_client::{NetworkRouter, RpcClientConfig, StellarRpcClient};
@@ -41,7 +42,7 @@ async fn run(config: Config) -> Result<(), Box<dyn std::error::Error>> {
 
     let state = AppState {
         engine: Arc::new(DiagnosticEngine::new(Arc::new(router))),
-        store: Arc::new(InMemoryStore::new(config.store_capacity)),
+        store: build_store(&config).await?,
         default_network: config.default_network,
         started_at: Utc::now(),
     };
@@ -59,6 +60,30 @@ async fn run(config: Config) -> Result<(), Box<dyn std::error::Error>> {
     .await?;
     tracing::info!("server stopped");
     Ok(())
+}
+
+async fn build_store(
+    config: &Config,
+) -> Result<Arc<dyn AnalysisStore>, Box<dyn std::error::Error>> {
+    match &config.database {
+        Some(db) => {
+            let options = PostgresOptions {
+                max_connections: db.max_connections,
+                ..PostgresOptions::default()
+            };
+            let store = PostgresStore::connect(&db.url, &options).await?;
+            store.migrate().await?;
+            tracing::info!("using PostgreSQL analysis store (migrations applied)");
+            Ok(Arc::new(store))
+        }
+        None => {
+            tracing::warn!(
+                capacity = config.store_capacity,
+                "DATABASE_URL not set: using in-memory analysis store (lost on restart)"
+            );
+            Ok(Arc::new(InMemoryStore::new(config.store_capacity)))
+        }
+    }
 }
 
 fn init_tracing(format: LogFormat) {

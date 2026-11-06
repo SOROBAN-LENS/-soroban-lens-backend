@@ -34,6 +34,9 @@ tower-http = { version = "0.7.1", features = ["cors", "trace", "timeout", "reque
 reqwest = { version = "0.13.5", default-features = false, features = ["json", "rustls"] }
 async-trait = "0.1.92"
 
+# Persistence. 0.8.x: sqlx 0.9 requires Rust 1.94 (above our MSRV).
+sqlx = { version = "0.8.6", default-features = false, features = ["runtime-tokio", "tls-rustls-ring-webpki", "postgres", "uuid", "chrono", "json", "migrate", "macros"] }
+
 # Serialization / utilities
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"

@@ -222,7 +222,7 @@ pub async fn stats(State(state): State<AppState>) -> Result<Json<StatsResponse>,
         })
         .collect();
     Ok(Json(StatsResponse {
-        since: state.started_at,
+        since: counts.since.unwrap_or(state.started_at),
         persistence: state.store.kind(),
         total_analyses: counts.total,
         successful_transactions: counts.success,

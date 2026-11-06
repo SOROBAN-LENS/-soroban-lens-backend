@@ -73,13 +73,19 @@ ledgers (about 7 days on the public testnet endpoint).
 
 ## `GET /api/v1/analyze/{id}`
 
-Returns a previously created report (`200`). Reports are held in memory, are
-capped (default 1000, oldest evicted) and are lost on restart.
+Returns a previously created report (`200`). Where reports live depends on the
+`persistence` value from `GET /api/v1`:
+
+* `postgres`: stored durably in PostgreSQL (no retention limit yet).
+* `in_memory`: capped (default 1000, oldest evicted) and lost on restart.
 
 ## `GET /api/v1/stats`
 
-Real counts of analyses served by **this server process** since it started,
-plus the 10 most recent analyses. These are not network-wide statistics.
+Real counts of analyses stored by this deployment, plus the 10 most recent
+analyses. These are not network-wide statistics. `since` is when counting
+began: with `in_memory` persistence, when the process started (counts include
+evicted reports); with `postgres`, the oldest stored analysis (or the process
+start time if there are none).
 
 ```json
 {

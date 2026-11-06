@@ -29,6 +29,22 @@ pub enum CorsOrigins {
     List(Vec<String>),
 }
 
+/// PostgreSQL settings. `Debug` redacts the URL, which usually holds a password.
+#[derive(Clone, PartialEq, Eq)]
+pub struct DatabaseConfig {
+    pub url: String,
+    pub max_connections: u32,
+}
+
+impl std::fmt::Debug for DatabaseConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DatabaseConfig")
+            .field("url", &"<redacted>")
+            .field("max_connections", &self.max_connections)
+            .finish()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RateLimitConfig {
     /// Maximum analysis requests per client per window. `0` disables limiting.
@@ -47,7 +63,10 @@ pub struct Config {
     pub cors_origins: CorsOrigins,
     pub max_body_bytes: usize,
     pub rate_limit: RateLimitConfig,
+    /// In-memory store capacity (used only when `database` is `None`).
     pub store_capacity: usize,
+    /// PostgreSQL storage. `None` selects the in-memory store.
+    pub database: Option<DatabaseConfig>,
     pub log_format: LogFormat,
 }
 
@@ -155,6 +174,27 @@ impl Config {
             window: Duration::from_secs(60),
         };
         let store_capacity = positive(&get, "SOROBAN_LENS_STORE_CAPACITY", 1000)? as usize;
+        let database = match get("DATABASE_URL") {
+            None => None,
+            Some(v) if v.is_empty() => None,
+            Some(url) => {
+                // Never echo the value: it usually contains a password.
+                let parsed = Url::parse(&url).map_err(|e| ConfigError::Invalid {
+                    var: "DATABASE_URL",
+                    reason: e.to_string(),
+                })?;
+                if !matches!(parsed.scheme(), "postgres" | "postgresql") {
+                    return Err(ConfigError::Invalid {
+                        var: "DATABASE_URL",
+                        reason: "URL scheme must be postgres or postgresql".into(),
+                    });
+                }
+                Some(DatabaseConfig {
+                    url,
+                    max_connections: positive(&get, "DATABASE_MAX_CONNECTIONS", 10)? as u32,
+                })
+            }
+        };
         let log_format = match get("SOROBAN_LENS_LOG_FORMAT").as_deref() {
             None | Some("pretty") => LogFormat::Pretty,
             Some("json") => LogFormat::Json,
@@ -177,6 +217,7 @@ impl Config {
             max_body_bytes,
             rate_limit,
             store_capacity,
+            database,
             log_format,
         })
     }
@@ -288,6 +329,29 @@ mod tests {
         assert!(config(&[("STELLAR_RPC_TIMEOUT_SECS", "0")]).is_err());
         assert!(config(&[("SOROBAN_LENS_CORS_ORIGINS", "https://a.example/path")]).is_err());
         assert!(config(&[("SOROBAN_LENS_LOG_FORMAT", "xml")]).is_err());
+    }
+
+    #[test]
+    fn database_is_optional_and_validated() {
+        assert_eq!(config(&[]).expect("ok").database, None);
+        assert_eq!(config(&[("DATABASE_URL", "")]).expect("ok").database, None);
+
+        let c = config(&[
+            (
+                "DATABASE_URL",
+                "postgres://user:secret@localhost/soroban_lens",
+            ),
+            ("DATABASE_MAX_CONNECTIONS", "4"),
+        ])
+        .expect("ok");
+        let db = c.database.expect("database configured");
+        assert_eq!(db.max_connections, 4);
+        assert!(!format!("{db:?}").contains("secret"));
+
+        let err = config(&[("DATABASE_URL", "mysql://user:secret@localhost/db")])
+            .expect_err("wrong scheme");
+        assert!(!err.to_string().contains("secret"));
+        assert!(config(&[("DATABASE_URL", "not a url")]).is_err());
     }
 
     #[test]

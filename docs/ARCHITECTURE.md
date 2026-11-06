@@ -16,7 +16,7 @@ flowchart LR
         API["api<br/>(Axum)"] --> ENG["diagnostic-engine"]
         ENG --> CLI["stellar-client"]
         ENG --> AN["error-analyzer"]
-        API --> STORE[("AnalysisStore<br/>in-memory")]
+        API --> STORE[("AnalysisStore<br/>PostgreSQL or in-memory")]
     end
     CLI -- "JSON-RPC getTransaction" --> RPC["Stellar RPC<br/>(testnet / mainnet)"]
     CT["soroban-lens-contracts"] -. "deployed to testnet,<br/>failing txs → fixtures" .-> RPC
@@ -84,12 +84,14 @@ All three repositories use these terms with these meanings:
 ```
 soroban-lens-backend/
 ├── api/                      # Axum server (binary + library for tests)
+│   ├── migrations/           # PostgreSQL schema (embedded, applied at startup)
 │   └── src/
 │       ├── config.rs         # env configuration and validation
 │       ├── error.rs          # ApiError → JSON error responses
 │       ├── rate_limit.rs     # per-IP fixed-window limiter
 │       ├── routes.rs         # handlers
 │       ├── store.rs          # AnalysisStore trait + in-memory impl
+│       ├── store/postgres.rs # PostgreSQL impl (report as JSONB + indexed columns)
 │       └── lib.rs            # router + middleware assembly
 └── crates/
     ├── models/               # serialization-stable shared types
@@ -123,8 +125,10 @@ api ──► diagnostic-engine ──► error-analyzer ──► models
   failures degrade to `partial` reports instead of errors.
 * **Honest evidence.** Every issue states its evidence level and sources.
   Possible causes are never presented as confirmed.
-* **Persistence behind a trait.** `AnalysisStore` lets PostgreSQL replace the
-  in-memory store without touching handlers.
+* **Persistence behind a trait.** `AnalysisStore` has PostgreSQL and in-memory
+  implementations, selected by `DATABASE_URL`; handlers don't know which is in
+  use. Reports are stored whole as JSONB, so schema changes to the report don't
+  need a migration; only indexed columns do.
 * **No AI dependency.** Analysis is rule-based in this milestone.
 
 ## Security model

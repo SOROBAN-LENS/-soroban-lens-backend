@@ -27,6 +27,11 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
+Store changes must also pass the PostgreSQL tests. They are skipped unless
+`TEST_DATABASE_URL` points at a database (see `api/tests/store.rs` for a
+one-line Docker command). Schema changes go in a new file in `api/migrations/`;
+never edit a migration that has been merged.
+
 ## Where things go
 
 | Change | Location |

@@ -1,16 +1,20 @@
 //! Storage for completed analyses.
 //!
-//! The [`AnalysisStore`] trait is the persistence boundary. This milestone
-//! ships a bounded in-memory implementation; reports are lost on restart.
+//! The [`AnalysisStore`] trait is the persistence boundary. Two
+//! implementations exist:
 //!
-//! TODO(next milestone): add a PostgreSQL implementation (sqlx) storing the
-//! report as JSONB alongside indexed columns (id, transaction_hash, network,
-//! transaction_status, created_at), selected via a `DATABASE_URL` setting.
+//! * [`InMemoryStore`]: bounded, lost on restart. Used when no database is
+//!   configured (local development, tests).
+//! * [`postgres::PostgresStore`]: durable PostgreSQL storage, selected by
+//!   setting `DATABASE_URL`.
+
+pub mod postgres;
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::Mutex;
 
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
 use soroban_lens_models::{DiagnosticReport, TransactionStatus};
 use uuid::Uuid;
 
@@ -23,6 +27,9 @@ pub enum StoreError {
 /// Aggregate counts over stored analyses.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct StoreStats {
+    /// Start of the period the counts cover, if known. `None` means the store
+    /// has nothing to report a start time from (e.g. an empty database).
+    pub since: Option<DateTime<Utc>>,
     pub total: u64,
     pub success: u64,
     pub failed: u64,
@@ -35,8 +42,8 @@ pub trait AnalysisStore: Send + Sync {
     async fn get(&self, id: Uuid) -> Result<Option<DiagnosticReport>, StoreError>;
     /// Most recent reports, newest first.
     async fn recent(&self, limit: usize) -> Result<Vec<DiagnosticReport>, StoreError>;
-    /// Counts of every analysis saved since the store was created (including
-    /// reports that have since been evicted).
+    /// Counts of analyses. The in-memory store counts every save since it was
+    /// created (including evicted reports); PostgreSQL counts stored rows.
     async fn stats(&self) -> Result<StoreStats, StoreError>;
     /// Short label describing the backend, e.g. `"in_memory"`.
     fn kind(&self) -> &'static str;
@@ -59,7 +66,13 @@ impl InMemoryStore {
     pub fn new(capacity: usize) -> Self {
         Self {
             capacity: capacity.max(1),
-            inner: Mutex::new(Inner::default()),
+            inner: Mutex::new(Inner {
+                stats: StoreStats {
+                    since: Some(Utc::now()),
+                    ..StoreStats::default()
+                },
+                ..Inner::default()
+            }),
         }
     }
 
